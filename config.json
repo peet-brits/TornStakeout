@@ -1,7 +1,7 @@
 {
   "CallsPerTick": 10,
   "TickIntervalSeconds": 4,
-  "MaxCallsPerMinute": 80,
+  "MaxCallsPerMinute": 90,
   "OkayRecheckSeconds": 8,
   "BusyRecheckSeconds": 120,
   "AwayRecheckSeconds": 240,

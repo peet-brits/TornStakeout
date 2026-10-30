@@ -9,17 +9,18 @@ namespace TornStakeout;
 
 public class AppConfig
 {
-    public string ApiKey { get; set; } = "PUT_YOUR_API_KEY_HERE";
+    public string ApiKey { get; set; } = "";             // API key from "local.json" or TORN_API_KEY environment variable
     public int CallsPerTick { get; set; } = 10;          // API calls made at the same time, once per tick
     public int TickIntervalSeconds { get; set; } = 4;    // length of a tick (minimum 1)
-    public int MaxCallsPerMinute { get; set; } = 80;     // hard budget over any 60 s; leave room for other tools using your key
+    public int MaxCallsPerMinute { get; set; } = 80;     // hard budget over any 60s. The app will pause for 30s whenever you exceed the Torn API limit.
     public int OkayRecheckSeconds { get; set; } = 8;     // re-check "Okay" players this often
     public int BusyRecheckSeconds { get; set; } = 120;   // safety re-check for hospital/jail
-    public int ActiveBusyRecheckSeconds { get; set; } = -1; //20;  // same, but for players who were active recently
-    public int ActiveWithinMinutes { get; set; } = 0; //10;       // "recently" = last action within this many minutes, 0 to disable active checks
     public int AwayRecheckSeconds { get; set; } = 240;    // re-check abroad / travelling players
     public int ErrorRetrySeconds { get; set; } = 300;     // retry users whose last call returned an API error
     public string LinkMode { get; set; } = "hyperlink";  // "hyperlink" (clickable text), "url" (both full URLs), "profile" (profile URL only) or "attack" (attack URL only)
+
+    public int ActiveBusyRecheckSeconds { get; set; } = -1; //20;  // re-check for hospital/jail players who were active recently
+    public int ActiveWithinMinutes { get; set; } = 0; //10;       // "recently" = last action within this many minutes, 0 to disable
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
 
