@@ -1,0 +1,14 @@
+bin/
+obj/
+
+# secrets and personal settings
+local.json
+local.txt
+
+# saved game data
+data.json
+data.json.tmp
+data.json.bad
+
+# your list of users
+users.txt

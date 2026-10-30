@@ -1,0 +1,532 @@
+using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+
+namespace TornStakeout;
+
+// ---------------------------------------------------------------- config
+
+public class AppConfig
+{
+    public string ApiKey { get; set; } = "PUT_YOUR_API_KEY_HERE";
+    public int CallsPerTick { get; set; } = 10;          // API calls made at the same time, once per tick
+    public int TickIntervalSeconds { get; set; } = 4;    // length of a tick (minimum 1)
+    public int MaxCallsPerMinute { get; set; } = 80;     // hard budget over any 60 s; leave room for other tools using your key
+    public int OkayRecheckSeconds { get; set; } = 8;     // re-check "Okay" players this often
+    public int BusyRecheckSeconds { get; set; } = 120;   // safety re-check for hospital/jail
+    public int ActiveBusyRecheckSeconds { get; set; } = -1; //20;  // same, but for players who were active recently
+    public int ActiveWithinMinutes { get; set; } = 0; //10;       // "recently" = last action within this many minutes, 0 to disable active checks
+    public int AwayRecheckSeconds { get; set; } = 240;    // re-check abroad / travelling players
+    public int ErrorRetrySeconds { get; set; } = 300;     // retry users whose last call returned an API error
+    public string LinkMode { get; set; } = "hyperlink";  // "hyperlink" (clickable text), "url" (both full URLs), "profile" (profile URL only) or "attack" (attack URL only)
+
+    static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
+
+    // Settings come from config.json; local.json (same folder) overrides any setting it contains,
+    // so the API key can live in local.json, which you keep out of git.
+    // The TORN_API_KEY environment variable, if set, overrides the key from both files.
+    public static AppConfig Load(string path)
+    {
+        if (!File.Exists(path))
+            File.WriteAllText(path, JsonSerializer.Serialize(new AppConfig(), Opts));
+
+        var settings = JsonNode.Parse(File.ReadAllText(path))?.AsObject() ?? new JsonObject();
+
+        var localPath = Path.Combine(Path.GetDirectoryName(path) ?? ".", "local.json");
+        if (File.Exists(localPath))
+        {
+            var local = JsonNode.Parse(File.ReadAllText(localPath))?.AsObject();
+            if (local != null)
+            {
+                foreach (var kv in local.ToList())
+                {
+                    local.Remove(kv.Key);          // detach the value from local before moving it
+                    settings[kv.Key] = kv.Value;
+                }
+            }
+        }
+
+        var cfg = settings.Deserialize<AppConfig>() ?? new AppConfig();
+
+        var envKey = Environment.GetEnvironmentVariable("TORN_API_KEY");
+        if (!string.IsNullOrWhiteSpace(envKey)) cfg.ApiKey = envKey.Trim();
+
+        cfg.CallsPerTick = Math.Max(1, cfg.CallsPerTick);
+        cfg.TickIntervalSeconds = Math.Max(1, cfg.TickIntervalSeconds);
+        cfg.MaxCallsPerMinute = Math.Max(1, cfg.MaxCallsPerMinute);
+        cfg.ActiveBusyRecheckSeconds = Math.Max(1, cfg.ActiveBusyRecheckSeconds);
+        cfg.ActiveWithinMinutes = Math.Max(0, cfg.ActiveWithinMinutes);
+        return cfg;
+    }
+}
+
+// ---------------------------------------------------------------- data model (this is what gets saved to data.json)
+
+public class UserRecord
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = "";
+
+    public int? LifeCurrent { get; set; }
+    public int? LifeMaximum { get; set; }
+
+    public string? StatusDescription { get; set; }
+    public string? StatusDetails { get; set; }
+    public string? StatusState { get; set; }
+    public string? StatusColor { get; set; }
+    public long Until { get; set; }                 // 0 when okay / abroad / travelling
+
+    public long HospitalTimestamp { get; set; }
+    public long JailTimestamp { get; set; }
+
+    public string? LastActionStatus { get; set; }
+    public long LastActionTimestamp { get; set; }
+    public string? LastActionRelative { get; set; }
+
+    public DateTimeOffset? LastUpdate { get; set; }   // last successful update
+    public DateTimeOffset? LastAttempt { get; set; }  // last time we tried
+    public string? Error { get; set; }                // API error from the last answer, null if it was fine
+}
+
+public class DataFile
+{
+    public DateTimeOffset? LastSaved { get; set; }
+    public List<UserRecord> Users { get; set; } = new();
+}
+
+// ---------------------------------------------------------------- what the screen shows
+
+public enum Section { Main, Attention }
+
+public class Row
+{
+    public long Id;
+    public string Name = "";
+    public Section Section;
+    public bool HasData;
+    public bool IsError;
+    public long Until;
+    public string Location = "";   // Okay / Hospital / Jail ...
+    public string Secs = "";       // remaining seconds
+    public string Reason = "";     // attention section: why the user is listed
+    public string Life = "";
+    public string LastAction = "";
+    public string Color = "";      // status.color from the API
+}
+
+// ---------------------------------------------------------------- json helpers
+
+static class J
+{
+    public static string? Str(JsonElement e, string name) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+            ? v.GetString() : null;
+
+    public static long Num(JsonElement e, string name) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v)
+        && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var n) ? n : 0;
+
+    public static JsonElement Obj(JsonElement e, string name) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) ? v : default;
+}
+
+// ---------------------------------------------------------------- the "database"
+
+public class DataStore
+{
+    readonly string _path;
+    readonly object _lock = new();
+    List<UserRecord> _users = new();
+    DateTimeOffset? _lastSaved;
+    bool _dirty;
+
+    public DataStore(string path) => _path = path;
+
+    public DateTimeOffset? LastSaved { get { lock (_lock) return _lastSaved; } }
+    public int Count { get { lock (_lock) return _users.Count; } }
+
+    public void Load()
+    {
+        if (!File.Exists(_path)) return;
+        try
+        {
+            var d = JsonSerializer.Deserialize<DataFile>(File.ReadAllText(_path));
+            if (d != null) { _users = d.Users; _lastSaved = d.LastSaved; }
+        }
+        catch
+        {
+            File.Copy(_path, _path + ".bad", true);   // keep the unreadable file, start fresh
+        }
+    }
+
+    // users.txt accepts "Sample [1234]" or just "1234"; '#' starts a comment line.
+    // users.txt decides who is tracked; saved data for users still in the list is kept.
+    public int MergeUserList(string listPath, out int skipped)
+    {
+        skipped = 0;
+        var found = new List<(long id, string name)>();
+        foreach (var line in File.ReadAllLines(listPath))
+        {
+            if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#')) continue;
+            var m = Regex.Match(line, @"^\s*(?:(?<name>.*?)\s*\[(?<id>\d+)\]|(?<id2>\d+))\s*$");
+            if (!m.Success) { skipped++; continue; }
+            var idText = m.Groups["id"].Success ? m.Groups["id"].Value : m.Groups["id2"].Value;
+            if (!long.TryParse(idText, out var id)) { skipped++; continue; }
+            found.Add((id, m.Groups["name"].Success ? m.Groups["name"].Value : ""));
+        }
+
+        lock (_lock)
+        {
+            var existing = new Dictionary<long, UserRecord>();
+            foreach (var u in _users) existing[u.Id] = u;
+
+            var result = new List<UserRecord>();
+            var seen = new HashSet<long>();
+            foreach (var (id, name) in found)
+            {
+                if (!seen.Add(id)) continue;
+                if (!existing.TryGetValue(id, out var rec)) rec = new UserRecord { Id = id, Name = name };
+                else if (string.IsNullOrEmpty(rec.Name)) rec.Name = name;
+                result.Add(rec);
+            }
+            _users = result;
+            Save();
+            return _users.Count;
+        }
+    }
+
+    static DateTime NextDue(UserRecord u, AppConfig c)
+    {
+        if (u.LastAttempt is null) return DateTime.MinValue;               // never queried: due now
+        var attempt = u.LastAttempt.Value.UtcDateTime;
+        if (u.Error != null) return attempt.AddSeconds(c.ErrorRetrySeconds);
+        if (u.StatusState is "Abroad" or "Traveling") return attempt.AddSeconds(c.AwayRecheckSeconds);
+        if (u.Until == 0) return attempt.AddSeconds(c.OkayRecheckSeconds);
+        var ends = DateTimeOffset.FromUnixTimeSeconds(u.Until).UtcDateTime.AddSeconds(1);
+        // players who acted recently can leave hospital/jail at any moment, so they get the faster recheck
+        var active = c.ActiveWithinMinutes > 0 && c.ActiveBusyRecheckSeconds > 0 && u.LastActionTimestamp > 0 &&
+                     DateTimeOffset.UtcNow.ToUnixTimeSeconds() - u.LastActionTimestamp <= c.ActiveWithinMinutes * 60L;
+        var safety = attempt.AddSeconds(active ? c.ActiveBusyRecheckSeconds : c.BusyRecheckSeconds);
+        return ends < safety ? ends : safety;
+    }
+
+    // Picks up to 'max' most-overdue users and marks the attempt.
+    public List<long> PickDue(AppConfig cfg, int max)
+    {
+        lock (_lock)
+        {
+            var now = DateTime.UtcNow;
+            var due = _users
+                .Select(u => (u, at: NextDue(u, cfg)))
+                .Where(x => x.at <= now)
+                .OrderBy(x => x.at)
+                .Take(max)
+                .Select(x => x.u)
+                .ToList();
+            foreach (var u in due) u.LastAttempt = DateTimeOffset.UtcNow;
+            return due.Select(u => u.Id).ToList();
+        }
+    }
+
+    public void ApplySuccess(long id, JsonElement root)
+    {
+        lock (_lock)
+        {
+            var u = _users.FirstOrDefault(x => x.Id == id);
+            if (u == null) return;
+
+            var name = J.Str(root, "name");
+            if (!string.IsNullOrEmpty(name)) u.Name = name;
+
+            var life = J.Obj(root, "life");
+            u.LifeCurrent = (int)J.Num(life, "current");
+            u.LifeMaximum = (int)J.Num(life, "maximum");
+
+            var st = J.Obj(root, "status");
+            u.StatusDescription = J.Str(st, "description");
+            u.StatusDetails = J.Str(st, "details");
+            u.StatusState = J.Str(st, "state");
+            u.StatusColor = J.Str(st, "color");
+            u.Until = J.Num(st, "until");
+
+            var states = J.Obj(root, "states");
+            u.HospitalTimestamp = J.Num(states, "hospital_timestamp");
+            u.JailTimestamp = J.Num(states, "jail_timestamp");
+
+            var la = J.Obj(root, "last_action");
+            u.LastActionStatus = J.Str(la, "status");
+            u.LastActionTimestamp = J.Num(la, "timestamp");
+            u.LastActionRelative = J.Str(la, "relative");
+
+            u.LastUpdate = DateTimeOffset.UtcNow;
+            u.Error = null;
+            _dirty = true;
+        }
+    }
+
+    public void ApplyError(long id, string message)
+    {
+        lock (_lock)
+        {
+            var u = _users.FirstOrDefault(x => x.Id == id);
+            if (u == null) return;
+            u.Error = message;
+            _dirty = true;
+        }
+    }
+
+    public void SaveIfDirty()
+    {
+        lock (_lock)
+        {
+            if (_dirty) Save();
+        }
+    }
+
+    void Save()   // call while holding _lock
+    {
+        _dirty = false;
+        _lastSaved = DateTimeOffset.UtcNow;
+        var json = JsonSerializer.Serialize(new DataFile { LastSaved = _lastSaved, Users = _users },
+            new JsonSerializerOptions { WriteIndented = true });
+        var tmp = _path + ".tmp";
+        File.WriteAllText(tmp, json);
+        File.Move(tmp, _path, true);
+    }
+
+    // Main list: sorted by status.until (lowest first). Attention list: errors first, then by name.
+    public (List<Row> main, List<Row> attention) Snapshot()
+    {
+        lock (_lock)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var rows = _users.Select(u => ToRow(u, now)).ToList();
+
+            var main = rows.Where(r => r.Section == Section.Main)
+                .OrderBy(r => r.HasData ? 0 : 1)
+                .ThenBy(r => r.Until)
+                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var attention = rows.Where(r => r.Section == Section.Attention)
+                .OrderBy(r => r.IsError ? 0 : 1)
+                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return (main, attention);
+        }
+    }
+
+    static Row ToRow(UserRecord u, DateTimeOffset now)
+    {
+        var r = new Row
+        {
+            Id = u.Id,
+            Name = string.IsNullOrEmpty(u.Name) ? $"[{u.Id}]" : u.Name,
+        };
+
+        if (u.Error != null)
+        {
+            r.Section = Section.Attention;
+            r.IsError = true;
+            r.Reason = u.Error;
+            r.LastAction = LastActionText(u, now);
+            return r;
+        }
+
+        if (u.LastUpdate == null)
+        {
+            r.Section = Section.Main;
+            r.Location = "waiting...";
+            return r;
+        }
+
+        r.HasData = true;
+        r.Life = $"{u.LifeCurrent}/{u.LifeMaximum}";
+        r.LastAction = LastActionText(u, now);
+        r.Color = u.StatusColor ?? "";
+
+        switch (u.StatusState)
+        {
+            case "Abroad":
+                r.Section = Section.Attention;
+                r.Reason = string.IsNullOrWhiteSpace(u.StatusDescription) ? "Abroad" : u.StatusDescription!;
+                break;
+            case "Traveling":
+                r.Section = Section.Attention;
+                r.Reason = u.StatusDescription ?? "Travelling"; //(u.StatusDescription ?? "").Contains("Torn") ? "Travelling to Torn" : "Travelling";
+                break;
+            default:
+                r.Section = Section.Main;
+                r.Location = string.IsNullOrEmpty(u.StatusState) ? "?" : u.StatusState!;
+                r.Until = u.Until;
+                if (u.Until > 0)
+                    r.Secs = FormatRemaining(Math.Max(0, u.Until - now.ToUnixTimeSeconds()));
+                break;
+        }
+        return r;
+    }
+
+    // 45 -> "45s", 323 -> "5m 23s", 9000 -> "2h 30m", 200000 -> "2d 7h"
+    static string FormatRemaining(long totalSeconds)
+    {
+        var t = TimeSpan.FromSeconds(totalSeconds);
+        if (t.TotalMinutes < 1) return $"{t.Seconds}s";
+        if (t.TotalHours < 1) return $"{t.Minutes}m {t.Seconds}s";
+        if (t.TotalDays < 1) return $"{t.Hours}h {t.Minutes}m";
+        return $"{(int)t.TotalDays}d {t.Hours}h";
+    }
+
+    static string LastActionText(UserRecord u, DateTimeOffset now)
+    {
+        if (u.LastActionTimestamp > 0)
+            return Ago(now - DateTimeOffset.FromUnixTimeSeconds(u.LastActionTimestamp));
+        return u.LastActionRelative ?? "";
+    }
+
+    static string Ago(TimeSpan t)
+    {
+        if (t.TotalSeconds < 0) t = TimeSpan.Zero;
+        if (t.TotalMinutes < 1) return $"{(int)t.TotalSeconds}s ago";
+        if (t.TotalHours < 1) return $"{(int)t.TotalMinutes}m ago";
+        if (t.TotalDays < 1) return $"{(int)t.TotalHours}h ago";
+        return $"{(int)t.TotalDays}d ago";
+    }
+}
+
+// ---------------------------------------------------------------- the paced API loop
+
+public class Poller
+{
+    readonly AppConfig _cfg;
+    readonly DataStore _store;
+    readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    long _calls;
+
+    public volatile string Message = "Starting...";
+    public volatile string LimitNote = "";          // stays on screen once the rate limit has been hit
+    public long TotalCalls => Interlocked.Read(ref _calls);
+
+    // call statistics, used to see how many calls fit before "too many requests"
+    readonly object _statLock = new();
+    readonly Queue<DateTime> _callTimes = new();    // calls in the last 60 s
+    DateTime _pausedUntil = DateTime.MinValue;
+    int _limitHits;
+
+    void RecordCall()
+    {
+        lock (_statLock)
+        {
+            var now = DateTime.UtcNow;
+            _callTimes.Enqueue(now);
+            TrimCalls(now);
+        }
+    }
+
+    void TrimCalls(DateTime now)   // call while holding _statLock
+    {
+        while (_callTimes.Count > 0 && (now - _callTimes.Peek()).TotalSeconds > 60) _callTimes.Dequeue();
+    }
+
+    public int CallsLastMinute
+    {
+        get { lock (_statLock) { TrimCalls(DateTime.UtcNow); return _callTimes.Count; } }
+    }
+
+    public int PauseSecondsLeft
+    {
+        get { lock (_statLock) return Math.Max(0, (int)Math.Ceiling((_pausedUntil - DateTime.UtcNow).TotalSeconds)); }
+    }
+
+    void RegisterLimitHit(int pauseMs)
+    {
+        lock (_statLock)
+        {
+            var now = DateTime.UtcNow;
+            TrimCalls(now);
+            var lastMinute = _callTimes.Count;
+            var lastSecond = _callTimes.Count(t => (now - t).TotalSeconds <= 1);
+            _limitHits++;
+            _pausedUntil = now.AddMilliseconds(pauseMs);
+            LimitNote = $"Rate limit hit at {DateTime.Now:HH:mm:ss} (hit #{_limitHits}): " +
+                        $"{lastMinute} calls in the last 60 s, {lastSecond} in the last second";
+        }
+    }
+
+    public Poller(AppConfig cfg, DataStore store) { _cfg = cfg; _store = store; }
+
+    // Every tick: take up to CallsPerTick users that are due and query them at the same time.
+    public async Task RunAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                var sw = Stopwatch.StartNew();
+                var extraDelayMs = 0;
+
+                // never more than CallsPerTick at once, and never more than MaxCallsPerMinute in any 60 s
+                var allowed = Math.Min(_cfg.CallsPerTick, _cfg.MaxCallsPerMinute - CallsLastMinute);
+                var ids = allowed > 0 ? _store.PickDue(_cfg, allowed) : new List<long>();
+                if (allowed <= 0)
+                    Message = $"{DateTime.Now:HH:mm:ss}  Call budget used up ({_cfg.MaxCallsPerMinute}/min), waiting";
+                if (ids.Count > 0)
+                {
+                    var results = await Task.WhenAll(ids.Select(id => QueryAsync(id, ct)));
+                    extraDelayMs = results.Max();
+                    _store.SaveIfDirty();
+                }
+
+                var wait = Math.Max(0, _cfg.TickIntervalSeconds * 1000 - (int)sw.ElapsedMilliseconds) + extraDelayMs;
+                await Task.Delay(wait, ct);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    // returns extra milliseconds to pause before the next tick
+    async Task<int> QueryAsync(long id, CancellationToken ct)
+    {
+        var key = _cfg.ApiKey;
+        try
+        {
+            Interlocked.Increment(ref _calls);
+            RecordCall();
+            var json = await _http.GetStringAsync(
+                $"https://api.torn.com/user/{id}?selections=profile&key={key}", ct);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("error", out var err))
+            {
+                var code = (int)J.Num(err, "code");
+                var text = J.Str(err, "error") ?? "unknown";
+
+                // Problems with the key or the rate limit are not the user's fault: pause, don't flag the user.
+                if (code == 5)
+                {
+                    RegisterLimitHit(30_000);
+                    return 30_000;
+                }
+                if (code is 2 or 10 or 13 or 18)
+                {
+                    Message = $"{DateTime.Now:HH:mm:ss}  API key problem (code {code}: {text}). Check config.json.";
+                    return 60_000;
+                }
+
+                _store.ApplyError(id, $"Error {code}: {text}");
+                return 0;
+            }
+
+            _store.ApplySuccess(id, root);
+            Message = $"Last update: {DateTime.Now:HH:mm:ss}";
+            return 0;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            // Network problem: keep the old data, show it in the footer, try again at the normal interval.
+            Message = $"{DateTime.Now:HH:mm:ss}  Request failed: {ex.Message.Replace(key, "***")}";
+            return 0;
+        }
+    }
+}
