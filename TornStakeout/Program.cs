@@ -19,6 +19,7 @@ if (string.IsNullOrWhiteSpace(cfg.ApiKey) || cfg.ApiKey.StartsWith("PUT_YOUR"))
 
 var store = new DataStore(dataPath);
 store.Load();
+store.ResetOkayPlayers();       // startup only: saved "okay" players show as "waiting..." until queried again
 
 if (!File.Exists(usersPath))
     File.WriteAllText(usersPath, "# One user per line: \"Name [1234]\" or just \"1234\". Lines starting with # are ignored.\n");

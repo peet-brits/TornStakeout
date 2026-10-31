@@ -198,6 +198,29 @@ public class DataStore
         }
     }
 
+    // Called once at startup (not on reload): saved "okay" players may have changed while the app was closed,
+    // so they go back to "waiting..." and are queried first, exactly as if their entry were removed from data.json.
+    // Players in hospital/jail, abroad, travelling or with an error keep their saved data.
+    public int ResetOkayPlayers()
+    {
+        lock (_lock)
+        {
+            var count = 0;
+            for (var i = 0; i < _users.Count; i++)
+            {
+                var u = _users[i];
+                if (u.LastUpdate != null && u.Error == null && u.Until == 0 &&
+                    u.StatusState is not ("Abroad" or "Traveling"))
+                {
+                    _users[i] = new UserRecord { Id = u.Id, Name = u.Name };   // keep only id and name
+                    count++;
+                }
+            }
+            if (count > 0) _dirty = true;
+            return count;
+        }
+    }
+
     static DateTime NextDue(UserRecord u, AppConfig c)
     {
         if (u.LastAttempt is null) return DateTime.MinValue;               // never queried: due now
