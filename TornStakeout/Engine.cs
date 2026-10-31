@@ -15,6 +15,7 @@ public class AppConfig
     public int MaxCallsPerMinute { get; set; } = 80;
     public int OkayRecheckSeconds { get; set; } = 7;
     public int BusyRecheckSeconds { get; set; } = 120;
+    public int ReleaseRecheckDelaySeconds { get; set; } = 5;
     public int AwayRecheckSeconds { get; set; } = 240;
     public int ErrorRetrySeconds { get; set; } = 300;
     public string LinkMode { get; set; } = "hyperlink";
@@ -57,6 +58,7 @@ public class AppConfig
         cfg.TickIntervalSeconds = Math.Max(1, cfg.TickIntervalSeconds);
         cfg.MaxCallsPerMinute = Math.Max(1, cfg.MaxCallsPerMinute);
         cfg.ActiveWithinMinutes = Math.Max(0, cfg.ActiveWithinMinutes);
+        cfg.ReleaseRecheckDelaySeconds = Math.Max(0, cfg.ReleaseRecheckDelaySeconds);
         return cfg;
     }
 }
@@ -203,7 +205,7 @@ public class DataStore
         if (u.Error != null) return attempt.AddSeconds(c.ErrorRetrySeconds);
         if (u.StatusState is "Abroad" or "Traveling") return attempt.AddSeconds(c.AwayRecheckSeconds);
         if (u.Until == 0) return attempt.AddSeconds(c.OkayRecheckSeconds);
-        var ends = DateTimeOffset.FromUnixTimeSeconds(u.Until).UtcDateTime.AddSeconds(1);
+        var ends = DateTimeOffset.FromUnixTimeSeconds(u.Until).UtcDateTime.AddSeconds(c.ReleaseRecheckDelaySeconds);
         // players who acted recently can leave hospital/jail at any moment, so they get the faster recheck
         var active = c.ActiveWithinMinutes > 0 && c.ActiveBusyRecheckSeconds > 0 && u.LastActionTimestamp > 0 &&
                      DateTimeOffset.UtcNow.ToUnixTimeSeconds() - u.LastActionTimestamp <= c.ActiveWithinMinutes * 60L;

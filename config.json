@@ -4,6 +4,7 @@
   "MaxCallsPerMinute": 80,
   "OkayRecheckSeconds": 7,
   "BusyRecheckSeconds": 120,
+  "ReleaseRecheckDelaySeconds": 5,
   "AwayRecheckSeconds": 240,
   "ErrorRetrySeconds": 300,
   "LinkMode": "attack"

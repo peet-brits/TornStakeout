@@ -27,14 +27,15 @@ Below is an overview of all the configuration settings.
 - `MaxCallsPerMinute`. The hard budget over any 60s duration. The app will pause for 30s whenever you exceed the Torn API limit.
 - `OkayRecheckSeconds`. Re-check "Okay" players this often.
 - `BusyRecheckSeconds`. Safety re-check for players in hospital / jail.
+- `ReleaseRecheckDelaySeconds`. Wait this long after a hospital / jail timer ends before re-checking.
 - `AwayRecheckSeconds`. Re-check abroad / travelling players.
 - `ErrorRetrySeconds`. Retry users whose last call returned an API error.
 - `LinkMode`. Options are: "hyperlink" (clickable text), "url" (both full URLs), "profile" (profile URL only) or "attack" (attack URL only).
 
 Experimental settings.
 
-- ActiveBusyRecheckSeconds. Re-check for hospital / jail players who were active recently (disabled by default).
-- ActiveWithinMinutes. "Recently active" = last action within this many minutes, 0 to disable (default 0).
+- `ActiveBusyRecheckSeconds`. Re-check for hospital / jail players who were active recently (disabled by default).
+- `ActiveWithinMinutes`. "Recently active" = last action within this many minutes, 0 to disable (default 0).
 
 Configuration priority.
 
