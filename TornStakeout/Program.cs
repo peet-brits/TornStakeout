@@ -148,11 +148,11 @@ static class Screen
         {
             Line();
             Line(Paint("1", $"NEEDS ATTENTION  ({attention.Count})"));
-            Line(Paint("90", Fit("Name", 16) + " " + Fit("Reason", 30) + " " + Fit("Last action", 15) + " Links"));
+            Line(Paint("90", Fit("Name", 16) + " " + Fit("Reason", 28) + " " + Fit("Last action", 15) + " Links"));
             foreach (var r in attention.Take(attShown))
             {
                 Line(Fit(r.Name, 16) + " " +
-                     Paint(r.IsError ? "31" : "36", Fit(r.Reason, 30)) + " " +
+                     Paint(r.IsError ? "31" : "36", Fit(r.Reason, 28)) + " " +
                      Fit(r.LastAction, 15) + " " +
                      Links(cfg, r.Id));
             }
