@@ -112,7 +112,8 @@ static class Screen
 
         var (main, attention) = store.Snapshot();
         var sb = new StringBuilder();
-        void Line(string s = "") => sb.Append(s).Append(Esc).Append("[K\n");
+        var used = 0;                                   // screen lines written so far
+        void Line(string s = "") { sb.Append(s).Append(Esc).Append("[K\n"); used++; }
 
         sb.Append($"{Esc}[H");
         var saved = store.LastSaved?.ToLocalTime().ToString("HH:mm:ss") ?? "never";
@@ -125,10 +126,27 @@ static class Screen
         if (poller.LimitNote != "") Line(Paint("31", poller.LimitNote));
         Line();
 
-        var avail = Math.Max(4, height - 14);
-        var reserve = Math.Min(attention.Count, 6);
-        var mainShown = Math.Min(main.Count, avail - reserve);
-        var attShown = Math.Min(attention.Count, avail - mainShown);
+        // Rows left for data = window height - header lines so far - 1 spare line (so the last newline doesn't scroll)
+        // - the STATUS title and column header (2) - the attention section's blank line, title and column header (3),
+        // which only exist when there is something to show there.
+        var avail = Math.Max(2, height - used - 1 - 2 - (attention.Count > 0 ? 3 : 0));
+
+        int mainShown, attShown;
+        if (attention.Count == 0)
+        {
+            // nothing in the second list: the status list gets every row (one is kept for "... more" if it is cut off)
+            mainShown = main.Count <= avail ? main.Count : Math.Max(0, avail - 1);
+            attShown = 0;
+        }
+        else
+        {
+            // the attention list is guaranteed up to 6 rows; the status list gets the rest
+            var attWant = Math.Min(attention.Count, 6);
+            var mainRoom = Math.Max(1, avail - attWant);
+            mainShown = main.Count <= mainRoom ? main.Count : Math.Max(0, mainRoom - 1);
+            var attRoom = Math.Max(0, avail - mainShown - (main.Count > mainShown ? 1 : 0));
+            attShown = attention.Count <= attRoom ? attention.Count : Math.Max(0, attRoom - 1);
+        }
 
         Line(Paint("1", $"STATUS  ({main.Count})"));
         Line(Paint("90", Fit("Name", 16) + " " + Fit("Location", 9) + " " + "Left".PadLeft(7) + " " +
