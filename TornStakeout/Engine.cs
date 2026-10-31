@@ -10,12 +10,12 @@ namespace TornStakeout;
 public class AppConfig
 {
     public string ApiKey { get; set; } = "";
-    public int CallsPerTick { get; set; } = 10;
-    public int TickIntervalSeconds { get; set; } = 4;
+    public int CallsPerTick { get; set; } = 5;
+    public int TickIntervalSeconds { get; set; } = 2;
     public int MaxCallsPerMinute { get; set; } = 80;
     public int OkayRecheckSeconds { get; set; } = 7;
     public int BusyRecheckSeconds { get; set; } = 120;
-    public int ReleaseRecheckDelaySeconds { get; set; } = 5;
+    public int ReleaseRecheckDelaySeconds { get; set; } = 7;
     public int AwayRecheckSeconds { get; set; } = 240;
     public int ErrorRetrySeconds { get; set; } = 300;
     public string LinkMode { get; set; } = "hyperlink";

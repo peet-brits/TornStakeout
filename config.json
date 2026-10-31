@@ -1,10 +1,10 @@
 {
-  "CallsPerTick": 10,
-  "TickIntervalSeconds": 4,
+  "CallsPerTick": 5,
+  "TickIntervalSeconds": 2,
   "MaxCallsPerMinute": 80,
   "OkayRecheckSeconds": 7,
   "BusyRecheckSeconds": 120,
-  "ReleaseRecheckDelaySeconds": 5,
+  "ReleaseRecheckDelaySeconds": 7,
   "AwayRecheckSeconds": 240,
   "ErrorRetrySeconds": 300,
   "LinkMode": "attack"
