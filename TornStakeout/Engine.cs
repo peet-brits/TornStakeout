@@ -19,7 +19,7 @@ public class AppConfig
     public int ErrorRetrySeconds { get; set; } = 300;
     public string LinkMode { get; set; } = "hyperlink";
 
-    public int ActiveBusyRecheckSeconds { get; set; } = -1; //20;
+    public int ActiveBusyRecheckSeconds { get; set; } = 0; //20;
     public int ActiveWithinMinutes { get; set; } = 0; //10;
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
@@ -56,7 +56,6 @@ public class AppConfig
         cfg.CallsPerTick = Math.Max(1, cfg.CallsPerTick);
         cfg.TickIntervalSeconds = Math.Max(1, cfg.TickIntervalSeconds);
         cfg.MaxCallsPerMinute = Math.Max(1, cfg.MaxCallsPerMinute);
-        cfg.ActiveBusyRecheckSeconds = Math.Max(1, cfg.ActiveBusyRecheckSeconds);
         cfg.ActiveWithinMinutes = Math.Max(0, cfg.ActiveWithinMinutes);
         return cfg;
     }
