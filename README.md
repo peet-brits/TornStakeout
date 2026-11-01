@@ -19,10 +19,14 @@ The app will create any missing files on first run. The default settings should 
 - users.txt - The list of players you want to watch.
 - config.json - If your terminal supports clickable links, set "LinkMode" to "hyperlink", otherwise "attack" (attack URL only) or "profile" (profile URL only).
 
-Below is an overview of all the configuration settings.
+Display settings.
+- `LinkMode`. Options are: "hyperlink" (clickable text), "url" (both full URLs), "profile" (profile URL only) or "attack" (attack URL only).
+- `LastActionRedWithin`. Last action will show red if up to this value, e.g. "15m". Default: no colour.
+- `LastActionYellowWithin`. Last action will show yellow if up to this value, e.g. "7d". Default: no colour.
+
+Below is an overview of all remaining configuration settings.
 
 - `ApiKey`. Your Torn API key. Public Only access is sufficient. Place this in 'local.json', or TORN_API_KEY environment variable.
-- `LinkMode`. Options are: "hyperlink" (clickable text), "url" (both full URLs), "profile" (profile URL only) or "attack" (attack URL only).
 - `CallsPerTick`. API calls made at the same time, once per tick.
 - `TickIntervalSeconds`. The delay between every tick (minimum 1).
 - `MaxCallsPerMinute`. The hard budget over any 60s duration. The app will pause for 30s whenever you exceed the Torn API limit.
@@ -31,8 +35,6 @@ Below is an overview of all the configuration settings.
 - `ReleaseRecheckDelaySeconds`. Wait this long after a hospital / jail timer ends before re-checking.
 - `AwayRecheckSeconds`. Re-check abroad / travelling players.
 - `ErrorRetrySeconds`. Retry users whose last call returned an API error.
-- `LastActionRedWithin`. Last action will show red if up to this value. E.g. "15m".
-- `LastActionYellowWithin`. Last action will show yellow if up to this value. E.g. "7d".
 
 Experimental settings.
 
