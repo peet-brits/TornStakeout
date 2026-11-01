@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -15,7 +16,7 @@ public class AppConfig
     public int MaxCallsPerMinute { get; set; } = 80;
     public int OkayRecheckSeconds { get; set; } = 7;
     public int BusyRecheckSeconds { get; set; } = 120;
-    public int ReleaseRecheckDelaySeconds { get; set; } = 7;
+    public int ReleaseRecheckDelaySeconds { get; set; } = 10;
     public int AwayRecheckSeconds { get; set; } = 240;
     public int ErrorRetrySeconds { get; set; } = 300;
     public string LinkMode { get; set; } = "hyperlink";
@@ -85,6 +86,8 @@ public class UserRecord
     public string? LastActionStatus { get; set; }
     public long LastActionTimestamp { get; set; }
     public string? LastActionRelative { get; set; }
+
+    public long Bounty { get; set; }                // dollar amount; 0 = no bounty, -1 = bounty shown but amount unreadable
 
     public DateTimeOffset? LastUpdate { get; set; }   // last successful update
     public DateTimeOffset? LastAttempt { get; set; }  // last time we tried
@@ -286,6 +289,9 @@ public class DataStore
             u.LastActionTimestamp = J.Num(la, "timestamp");
             u.LastActionRelative = J.Str(la, "relative");
 
+            // basicicons is an object of icons, or an empty array when there are none; J.Str copes with both
+            u.Bounty = ParseBounty(J.Str(J.Obj(root, "basicicons"), "icon13"));
+
             u.LastUpdate = DateTimeOffset.UtcNow;
             u.Error = null;
             _dirty = true;
@@ -403,8 +409,30 @@ public class DataStore
         return $"{(int)t.TotalDays}d {t.Hours}h";
     }
 
+    // "Bounty - On this person's head for $200,000" -> 200000; -1 if there is a bounty but no readable amount
+    static long ParseBounty(string? icon)
+    {
+        if (string.IsNullOrEmpty(icon)) return 0;
+        var m = Regex.Match(icon, @"\$\s*([\d,]+)");
+        return m.Success && long.TryParse(m.Groups[1].Value.Replace(",", ""), out var v) && v > 0 ? v : -1;
+    }
+
+    // 950 -> "$950", 200000 -> "$200k", 1500000 -> "$1.5m", 2000000000 -> "$2b"
+    static string CompactMoney(long value)
+    {
+        string[] units = { "", "k", "m", "b" };
+        double d = value;
+        var unit = 0;
+        while (d >= 1000 && unit < 3) { d /= 1000; unit++; }
+        d = Math.Round(d, 2);
+        if (d >= 1000 && unit < 3) { d /= 1000; unit++; }      // e.g. 999,999 rounds up to 1000k -> 1m
+        return "$" + d.ToString("0.##", CultureInfo.InvariantCulture) + units[unit];
+    }
+
     static string LastActionText(UserRecord u, DateTimeOffset now)
     {
+        if (u.Bounty != 0)                                      // a bounty replaces the last action
+            return u.Bounty > 0 ? "[B] " + CompactMoney(u.Bounty) : "[B]";
         if (u.LastActionTimestamp > 0)
             return Ago(now - DateTimeOffset.FromUnixTimeSeconds(u.LastActionTimestamp));
         return u.LastActionRelative ?? "";
