@@ -24,27 +24,23 @@ public class AppConfig
 
     // Last action colours. A number plus a unit: s (seconds), m (minutes), h (hours) or d (days), e.g. "15m", "7d".
     // Within the red limit = red, otherwise within the yellow limit = yellow, otherwise no colour.
-    public string LastActionRedWithin { get; set; } = "15m";
-    public string LastActionYellowWithin { get; set; } = "7d";
+    // Blank (the default) or anything that can't be read turns that colour off.
+    public string LastActionRedWithin { get; set; } = "";
+    public string LastActionYellowWithin { get; set; } = "";
 
-    [JsonIgnore] public long LastActionRedSeconds { get; private set; }      // the two settings above, in seconds
-    [JsonIgnore] public long LastActionYellowSeconds { get; private set; }
-    [JsonIgnore] public string Warnings { get; private set; } = "";          // problems found in the settings, shown on screen
+    [JsonIgnore] public long LastActionRedSeconds { get; private set; } = -1;     // the two settings above in seconds; -1 = off
+    [JsonIgnore] public long LastActionYellowSeconds { get; private set; } = -1;
 
     public int ActiveBusyRecheckSeconds { get; set; } = 0; //20;
     public int ActiveWithinMinutes { get; set; } = 0; //10;
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
 
-    // "15m" -> 900, "7d" -> 604800. Anything else is reported in 'warnings' and the fallback is used.
-    static long ParseDuration(string? text, long fallbackSeconds, string setting, List<string> warnings)
+    // "15m" -> 900, "7d" -> 604800. Blank or anything unreadable -> -1, which switches that colour off.
+    static long ParseDuration(string? text)
     {
         var m = Regex.Match(text ?? "", @"^\s*(\d{1,6})\s*([smhd])\s*$", RegexOptions.IgnoreCase);
-        if (!m.Success)
-        {
-            warnings.Add($"{setting} \"{text}\" not understood (use e.g. 15m, 2h or 7d), using the default");
-            return fallbackSeconds;
-        }
+        if (!m.Success) return -1;
         var n = long.Parse(m.Groups[1].Value);
         return char.ToLowerInvariant(m.Groups[2].Value[0]) switch
         {
@@ -90,10 +86,8 @@ public class AppConfig
         cfg.ActiveWithinMinutes = Math.Max(0, cfg.ActiveWithinMinutes);
         cfg.ReleaseRecheckDelaySeconds = Math.Max(0, cfg.ReleaseRecheckDelaySeconds);
 
-        var warnings = new List<string>();
-        cfg.LastActionRedSeconds = ParseDuration(cfg.LastActionRedWithin, 15 * 60, nameof(LastActionRedWithin), warnings);
-        cfg.LastActionYellowSeconds = ParseDuration(cfg.LastActionYellowWithin, 7 * 86400, nameof(LastActionYellowWithin), warnings);
-        cfg.Warnings = string.Join("; ", warnings);
+        cfg.LastActionRedSeconds = ParseDuration(cfg.LastActionRedWithin);
+        cfg.LastActionYellowSeconds = ParseDuration(cfg.LastActionYellowWithin);
         return cfg;
     }
 }
@@ -466,11 +460,15 @@ public class DataStore
         return "$" + d.ToString("0.##", CultureInfo.InvariantCulture) + units[unit];
     }
 
-    // seconds since the last action; -1 when there is nothing to colour (a bounty is shown instead, or no timestamp)
-    static long ActionAge(UserRecord u, DateTimeOffset now) =>
-        u.Bounty != 0 || u.LastActionTimestamp <= 0
-            ? -1
-            : Math.Max(0, now.ToUnixTimeSeconds() - u.LastActionTimestamp);
+    // Seconds since the last action, rounded down to the unit shown on screen (so "2d ago" counts as exactly 2 days
+    // and the colours match what you read). -1 when there is nothing to colour (a bounty is shown, or no timestamp).
+    static long ActionAge(UserRecord u, DateTimeOffset now)
+    {
+        if (u.Bounty != 0 || u.LastActionTimestamp <= 0) return -1;
+        var secs = Math.Max(0, now.ToUnixTimeSeconds() - u.LastActionTimestamp);
+        var unit = secs < 60 ? 1 : secs < 3600 ? 60 : secs < 86400 ? 3600 : 86400;   // same cut-offs as Ago()
+        return secs / unit * unit;
+    }
 
     static string LastActionText(UserRecord u, DateTimeOffset now)
     {

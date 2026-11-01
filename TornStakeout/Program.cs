@@ -129,7 +129,6 @@ static class Screen
              $"  {DateTime.Now:HH:mm:ss}   users: {store.Count}   calls: {poller.TotalCalls} ({poller.CallsLastMinute}/{cfg.MaxCallsPerMinute} per min)   saved: {saved}   " +
              Paint("90", "[R] reload  [Q] quit"));
         Line(Paint("90", poller.Message) + (notice != "" ? "   " + Paint("33", notice) : ""));
-        if (cfg.Warnings != "") Line(Paint("33", "Config: " + cfg.Warnings));
         var pause = poller.PauseSecondsLeft;
         if (pause > 0) Line(Paint("1;31", $"PAUSED: too many requests, resuming in {pause}s"));
         if (poller.LimitNote != "") Line(Paint("31", poller.LimitNote));
