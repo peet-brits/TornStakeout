@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace TornStakeout;
@@ -11,6 +12,7 @@ namespace TornStakeout;
 public class AppConfig
 {
     public string ApiKey { get; set; } = "";
+    public string LinkMode { get; set; } = "hyperlink";
     public int CallsPerTick { get; set; } = 5;
     public int TickIntervalSeconds { get; set; } = 2;
     public int MaxCallsPerMinute { get; set; } = 80;
@@ -19,12 +21,39 @@ public class AppConfig
     public int ReleaseRecheckDelaySeconds { get; set; } = 10;
     public int AwayRecheckSeconds { get; set; } = 240;
     public int ErrorRetrySeconds { get; set; } = 300;
-    public string LinkMode { get; set; } = "hyperlink";
+
+    // Last action colours. A number plus a unit: s (seconds), m (minutes), h (hours) or d (days), e.g. "15m", "7d".
+    // Within the red limit = red, otherwise within the yellow limit = yellow, otherwise no colour.
+    public string LastActionRedWithin { get; set; } = "15m";
+    public string LastActionYellowWithin { get; set; } = "7d";
+
+    [JsonIgnore] public long LastActionRedSeconds { get; private set; }      // the two settings above, in seconds
+    [JsonIgnore] public long LastActionYellowSeconds { get; private set; }
+    [JsonIgnore] public string Warnings { get; private set; } = "";          // problems found in the settings, shown on screen
 
     public int ActiveBusyRecheckSeconds { get; set; } = 0; //20;
     public int ActiveWithinMinutes { get; set; } = 0; //10;
 
     static readonly JsonSerializerOptions Opts = new() { WriteIndented = true };
+
+    // "15m" -> 900, "7d" -> 604800. Anything else is reported in 'warnings' and the fallback is used.
+    static long ParseDuration(string? text, long fallbackSeconds, string setting, List<string> warnings)
+    {
+        var m = Regex.Match(text ?? "", @"^\s*(\d{1,6})\s*([smhd])\s*$", RegexOptions.IgnoreCase);
+        if (!m.Success)
+        {
+            warnings.Add($"{setting} \"{text}\" not understood (use e.g. 15m, 2h or 7d), using the default");
+            return fallbackSeconds;
+        }
+        var n = long.Parse(m.Groups[1].Value);
+        return char.ToLowerInvariant(m.Groups[2].Value[0]) switch
+        {
+            's' => n,
+            'm' => n * 60,
+            'h' => n * 3600,
+            _ => n * 86400
+        };
+    }
 
     // Settings come from config.json; local.json (same folder) overrides any setting it contains,
     // so the API key can live in local.json, which you keep out of git.
@@ -60,6 +89,11 @@ public class AppConfig
         cfg.MaxCallsPerMinute = Math.Max(1, cfg.MaxCallsPerMinute);
         cfg.ActiveWithinMinutes = Math.Max(0, cfg.ActiveWithinMinutes);
         cfg.ReleaseRecheckDelaySeconds = Math.Max(0, cfg.ReleaseRecheckDelaySeconds);
+
+        var warnings = new List<string>();
+        cfg.LastActionRedSeconds = ParseDuration(cfg.LastActionRedWithin, 15 * 60, nameof(LastActionRedWithin), warnings);
+        cfg.LastActionYellowSeconds = ParseDuration(cfg.LastActionYellowWithin, 7 * 86400, nameof(LastActionYellowWithin), warnings);
+        cfg.Warnings = string.Join("; ", warnings);
         return cfg;
     }
 }
@@ -118,6 +152,7 @@ public class Row
     public string Life = "";
     public string LastAction = "";
     public string Color = "";      // status.color from the API
+    public long AgeSeconds = -1;   // seconds since the last action; -1 = nothing to colour (bounty shown, or unknown)
 }
 
 // ---------------------------------------------------------------- json helpers
@@ -363,6 +398,7 @@ public class DataStore
             r.IsError = true;
             r.Reason = u.Error;
             r.LastAction = LastActionText(u, now);
+            r.AgeSeconds = ActionAge(u, now);
             return r;
         }
 
@@ -376,6 +412,7 @@ public class DataStore
         r.HasData = true;
         r.Life = $"{u.LifeCurrent}/{u.LifeMaximum}";
         r.LastAction = LastActionText(u, now);
+        r.AgeSeconds = ActionAge(u, now);
         r.Color = u.StatusColor ?? "";
 
         switch (u.StatusState)
@@ -428,6 +465,12 @@ public class DataStore
         if (d >= 1000 && unit < 3) { d /= 1000; unit++; }      // e.g. 999,999 rounds up to 1000k -> 1m
         return "$" + d.ToString("0.##", CultureInfo.InvariantCulture) + units[unit];
     }
+
+    // seconds since the last action; -1 when there is nothing to colour (a bounty is shown instead, or no timestamp)
+    static long ActionAge(UserRecord u, DateTimeOffset now) =>
+        u.Bounty != 0 || u.LastActionTimestamp <= 0
+            ? -1
+            : Math.Max(0, now.ToUnixTimeSeconds() - u.LastActionTimestamp);
 
     static string LastActionText(UserRecord u, DateTimeOffset now)
     {

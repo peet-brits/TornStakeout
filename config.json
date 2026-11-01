@@ -1,4 +1,5 @@
 {
+  "LinkMode": "attack",
   "CallsPerTick": 5,
   "TickIntervalSeconds": 2,
   "MaxCallsPerMinute": 80,
@@ -7,5 +8,7 @@
   "ReleaseRecheckDelaySeconds": 10,
   "AwayRecheckSeconds": 240,
   "ErrorRetrySeconds": 300,
-  "LinkMode": "attack"
+
+  "LastActionRedWithin": "15m",
+  "LastActionYellowWithin": "7d"
 }

@@ -95,6 +95,13 @@ static class Screen
         _ => "0"
     };
 
+    // red if the last action is recent enough, otherwise yellow, otherwise no colour (bounty rows have no age)
+    static string AgeColor(AppConfig cfg, Row r) =>
+        r.AgeSeconds < 0 ? "0"
+        : r.AgeSeconds <= cfg.LastActionRedSeconds ? "31"
+        : r.AgeSeconds <= cfg.LastActionYellowSeconds ? "33"
+        : "0";
+
     static string Links(AppConfig cfg, long id)
     {
         var profile = $"https://www.torn.com/profiles.php?XID={id}";
@@ -122,6 +129,7 @@ static class Screen
              $"  {DateTime.Now:HH:mm:ss}   users: {store.Count}   calls: {poller.TotalCalls} ({poller.CallsLastMinute}/{cfg.MaxCallsPerMinute} per min)   saved: {saved}   " +
              Paint("90", "[R] reload  [Q] quit"));
         Line(Paint("90", poller.Message) + (notice != "" ? "   " + Paint("33", notice) : ""));
+        if (cfg.Warnings != "") Line(Paint("33", "Config: " + cfg.Warnings));
         var pause = poller.PauseSecondsLeft;
         if (pause > 0) Line(Paint("1;31", $"PAUSED: too many requests, resuming in {pause}s"));
         if (poller.LimitNote != "") Line(Paint("31", poller.LimitNote));
@@ -158,7 +166,7 @@ static class Screen
                  Paint(StatusColor(r.Color), Fit(r.Location, 9)) + " " +
                  r.Secs.PadLeft(7) + " " +
                  Fit(r.Life, 10) + " " +
-                 Fit(r.LastAction, 15) + " " +
+                 Paint(AgeColor(cfg, r), Fit(r.LastAction, 15)) + " " +
                  Links(cfg, r.Id));
         }
         if (main.Count > mainShown) Line(Paint("90", $"... {main.Count - mainShown} more (make the window taller)"));
@@ -172,7 +180,7 @@ static class Screen
             {
                 Line(Fit(r.Name, 16) + " " +
                      Paint(r.IsError ? "31" : "36", Fit(r.Reason, 28)) + " " +
-                     Fit(r.LastAction, 15) + " " +
+                     Paint(AgeColor(cfg, r), Fit(r.LastAction, 15)) + " " +
                      Links(cfg, r.Id));
             }
             if (attention.Count > attShown) Line(Paint("90", $"... {attention.Count - attShown} more (make the window taller)"));
