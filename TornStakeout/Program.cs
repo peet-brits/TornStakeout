@@ -197,7 +197,7 @@ static class Screen
         if (attention.Count > 0)
         {
             Line();
-            Line(Paint("1", $"NEEDS ATTENTION  ({attention.Count})"));
+            Line(Paint("1", $"UNAVAILABLE  ({attention.Count})"));
             Line(Paint("90", Fit("Name", 16) + " " + Fit("Reason", 28) + " " + Fit("Last action", 15) + " Links"));
             foreach (var r in attention.Take(attShown))
             {
@@ -238,7 +238,7 @@ static class Screen
         if (attention.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine($"NEEDS ATTENTION  ({attention.Count})");
+            sb.AppendLine($"UNAVAILABLE  ({attention.Count})");
             sb.AppendLine("Name".PadRight(16) + " " + "Reason".PadRight(28) + " " + "Last action".PadRight(15) + " Links");
             foreach (var r in attention)
                 sb.AppendLine(r.Name.PadRight(16) + " " + r.Reason.PadRight(28) + " " + r.LastAction.PadRight(15) + " " +
