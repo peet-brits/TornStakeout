@@ -11,3 +11,6 @@ data.json.*
 
 # your list of users
 users*.txt
+
+# output
+print-*.txt

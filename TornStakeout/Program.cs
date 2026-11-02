@@ -58,6 +58,17 @@ try
                 var key = Console.ReadKey(true).Key;
                 if (key == ConsoleKey.Q) cts.Cancel();
                 else if (key == ConsoleKey.A) alarm.Toggle();
+                else if (key == ConsoleKey.P)
+                {
+                    try
+                    {
+                        var file = Path.Combine(dir, $"print-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+                        File.WriteAllText(file, Screen.Dump(cfg, store, poller));
+                        notice = $"Printed to {Path.GetFileName(file)}";
+                    }
+                    catch (Exception ex) { notice = "Could not print: " + ex.Message; }
+                    noticeTime = DateTime.Now;
+                }
                 else if (key == ConsoleKey.R)
                 {
                     try
@@ -106,13 +117,14 @@ static class Screen
         : r.AgeSeconds <= cfg.LastActionYellowSeconds ? "33"
         : "0";
 
-    static string Links(AppConfig cfg, long id)
+    // plainText = true is for the printed file: "hyperlink" mode can't be clickable there, so it writes both full URLs
+    static string Links(AppConfig cfg, long id, bool plainText = false)
     {
         var profile = $"https://www.torn.com/profiles.php?XID={id}";
         var attack = $"https://www.torn.com/page.php?sid=attack&user2ID={id}";
         if (cfg.LinkMode.Equals("profile", StringComparison.OrdinalIgnoreCase)) return profile;
         if (cfg.LinkMode.Equals("attack", StringComparison.OrdinalIgnoreCase)) return attack;
-        if (cfg.LinkMode.Equals("url", StringComparison.OrdinalIgnoreCase))
+        if (plainText || cfg.LinkMode.Equals("url", StringComparison.OrdinalIgnoreCase))
             return $"{profile}  {attack}";
         return $"{Esc}]8;;{profile}{Esc}\\profile{Esc}]8;;{Esc}\\ {Esc}]8;;{attack}{Esc}\\attack{Esc}]8;;{Esc}\\";
     }
@@ -129,12 +141,18 @@ static class Screen
 
         sb.Append($"{Esc}[H");
         var saved = store.LastSaved?.ToLocalTime().ToString("HH:mm:ss") ?? "never";
-        Line(Paint("1", "Torn Stakeout") +
-             $"  {DateTime.Now:HH:mm:ss}   users: {store.Count}   calls: {poller.TotalCalls} ({poller.CallsLastMinute}/{cfg.MaxCallsPerMinute} per min)   saved: {saved}   " +
-             Paint("90", "[R] reload  ") +
+        var stats = $"  {DateTime.Now:HH:mm:ss}   users: {store.Count}   calls: {poller.TotalCalls} ({poller.CallsLastMinute}/{cfg.MaxCallsPerMinute} per min)   saved: {saved}   ";
+        const string keys1 = "[R] reload  [Q] quit";
+        Line(Paint("1", "Torn Stakeout") + stats + Paint("90", keys1));
+
+        // Second line: status message (and notice) on the left, "[A] alarm  [P] print" right-aligned under the first line's keys.
+        var message = poller.Message;
+        var leftLength = message.Length + (notice != "" ? 3 + notice.Length : 0);
+        const string keys2 = "[A] alarm  [P] print";
+        var gap = Math.Max(3, "Torn Stakeout".Length + stats.Length + keys1.Length - leftLength - keys2.Length);
+        Line(Paint("90", message) + (notice != "" ? "   " + Paint("33", notice) : "") + new string(' ', gap) +
              (alarmOn ? Paint("30;43", "[A] alarm") : Paint("90", "[A] alarm")) +     // highlighted while the alarm is on
-             Paint("90", "  [Q] quit"));
-        Line(Paint("90", poller.Message) + (notice != "" ? "   " + Paint("33", notice) : ""));
+             Paint("90", "  [P] print"));
         var pause = poller.PauseSecondsLeft;
         if (pause > 0) Line(Paint("1;31", $"PAUSED: too many requests, resuming in {pause}s"));
         if (poller.LimitNote != "") Line(Paint("31", poller.LimitNote));
@@ -192,6 +210,40 @@ static class Screen
         }
 
         sb.Append($"{Esc}[J");     // clear anything left below
+        return sb.ToString();
+    }
+
+    // Everything the screen shows, but complete: every row (nothing hidden under "... more"), no truncation, no colours,
+    // and full link URLs (a LinkMode of "hyperlink" is written as "url"). Used by the [P] print key.
+    public static string Dump(AppConfig cfg, DataStore store, Poller poller)
+    {
+        var (main, attention) = store.Snapshot();
+        var sb = new StringBuilder();
+
+        var saved = store.LastSaved?.ToLocalTime().ToString("HH:mm:ss") ?? "never";
+        sb.AppendLine($"Torn Stakeout  {DateTime.Now:yyyy-MM-dd HH:mm:ss}   users: {store.Count}   calls: {poller.TotalCalls} ({poller.CallsLastMinute}/{cfg.MaxCallsPerMinute} per min)   saved: {saved}");
+        sb.AppendLine(poller.Message);
+        var pause = poller.PauseSecondsLeft;
+        if (pause > 0) sb.AppendLine($"PAUSED: too many requests, resuming in {pause}s");
+        if (poller.LimitNote != "") sb.AppendLine(poller.LimitNote);
+        sb.AppendLine();
+
+        sb.AppendLine($"STATUS  ({main.Count})");
+        sb.AppendLine("Name".PadRight(16) + " " + "Location".PadRight(10) + " " + "Left".PadLeft(7) + " " +
+                      "Life".PadRight(10) + " " + "Last action".PadRight(15) + " Links");
+        foreach (var r in main)
+            sb.AppendLine(r.Name.PadRight(16) + " " + r.Location.PadRight(10) + " " + r.Secs.PadLeft(7) + " " +
+                          r.Life.PadRight(10) + " " + r.LastAction.PadRight(15) + " " + Links(cfg, r.Id, plainText: true));
+
+        if (attention.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"NEEDS ATTENTION  ({attention.Count})");
+            sb.AppendLine("Name".PadRight(16) + " " + "Reason".PadRight(28) + " " + "Last action".PadRight(15) + " Links");
+            foreach (var r in attention)
+                sb.AppendLine(r.Name.PadRight(16) + " " + r.Reason.PadRight(28) + " " + r.LastAction.PadRight(15) + " " +
+                              Links(cfg, r.Id, plainText: true));
+        }
         return sb.ToString();
     }
 }
