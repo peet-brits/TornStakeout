@@ -54,9 +54,15 @@ class Alarm
 
     public void Toggle()
     {
-        Enabled = !Enabled;
-        if (Enabled)    // a test notification, so a blocked or missing notification shows up now and not mid-event
-            Notifier.Send("Torn Stakeout", $"Alarm on: you will be notified {_cfg.AlarmLeadSeconds}s before a hospital or jail release.");
+        if (Enabled) Enabled = false;
+        else TurnOn();
+    }
+
+    public void TurnOn()
+    {
+        Enabled = true;
+        // a notification every time the alarm goes on, so a blocked or missing one shows up now and not mid-event
+        Notifier.Send("Torn Stakeout", $"Alarm on: you will be notified {_cfg.AlarmLeadSeconds}s before a hospital or jail release.");
     }
 
     // Call about once a second.

@@ -43,6 +43,7 @@ Below is an overview of all remaining configuration settings.
 - `AwayRecheckSeconds`. Re-check abroad / travelling players.
 - `ErrorRetrySeconds`. Retry users whose last call returned an API error.
 - `AlarmLeadSeconds`. With the alarm on (press A), send a desktop notification this many seconds before a timer ends (default 30).
+- `AlarmOnAtStart`. Turn the alarm on when the app starts (default false).
 
 Experimental settings.
 

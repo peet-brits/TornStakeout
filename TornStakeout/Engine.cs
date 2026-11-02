@@ -22,6 +22,7 @@ public class AppConfig
     public int AwayRecheckSeconds { get; set; } = 240;
     public int ErrorRetrySeconds { get; set; } = 300;
     public int AlarmLeadSeconds { get; set; } = 30;
+    public bool AlarmOnAtStart { get; set; } = false;
 
     // Last action colours. A number plus a unit: s (seconds), m (minutes), h (hours) or d (days), e.g. "15m", "7d".
     // Within the red limit = red, otherwise within the yellow limit = yellow, otherwise no colour.

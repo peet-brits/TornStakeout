@@ -35,7 +35,8 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
 var poller = new Poller(cfg, store);
 var pollTask = Task.Run(() => poller.RunAsync(cts.Token));
-var alarm = new Alarm(cfg, store);              // off until you press A
+var alarm = new Alarm(cfg, store);
+if (cfg.AlarmOnAtStart) alarm.TurnOn();     // otherwise it stays off until you press A
 
 var notice = skippedAtStart > 0 ? $"{skippedAtStart} line(s) in users.txt were not understood and skipped" : "";
 var noticeTime = DateTime.Now;

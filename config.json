@@ -9,6 +9,7 @@
   "AwayRecheckSeconds": 240,
   "ErrorRetrySeconds": 300,
   "AlarmLeadSeconds": 30,
+  "AlarmOnAtStart": false,
 
   "LastActionRedWithin": "15m",
   "LastActionYellowWithin": "7d"
