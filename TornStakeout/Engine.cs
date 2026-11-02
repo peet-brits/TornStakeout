@@ -25,8 +25,8 @@ public class AppConfig
     // Last action colours. A number plus a unit: s (seconds), m (minutes), h (hours) or d (days), e.g. "15m", "7d".
     // Within the red limit = red, otherwise within the yellow limit = yellow, otherwise no colour.
     // Blank (the default) or anything that can't be read turns that colour off.
-    public string LastActionRedWithin { get; set; } = "";
-    public string LastActionYellowWithin { get; set; } = "";
+    public string LastActionRedWithin { get; set; } = "15m";
+    public string LastActionYellowWithin { get; set; } = "7d";
 
     [JsonIgnore] public long LastActionRedSeconds { get; private set; } = -1;     // the two settings above in seconds; -1 = off
     [JsonIgnore] public long LastActionYellowSeconds { get; private set; } = -1;

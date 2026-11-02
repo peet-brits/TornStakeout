@@ -21,8 +21,8 @@ The app will create any missing files on first run. The default settings should 
 
 Display settings.
 - `LinkMode`. Options are: "hyperlink" (clickable text), "attack" (attack URL only), "profile" (profile URL only) or "url" (both full URLs).
-- `LastActionRedWithin`. Last action will show red if up to this value, e.g. "15m". Default: no colour.
-- `LastActionYellowWithin`. Last action will show yellow if up to this value, e.g. "7d". Default: no colour.
+- `LastActionRedWithin`. Last action will show red if up to this value, e.g. "15m", or "" for no colour.
+- `LastActionYellowWithin`. Last action will show yellow if up to this value, e.g. "7d", or "" for no colour.
 
 Below is an overview of all remaining configuration settings.
 
