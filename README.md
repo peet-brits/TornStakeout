@@ -20,9 +20,16 @@ The app will create any missing files on first run. The default settings should 
 - config.json - If your terminal supports clickable links, set "LinkMode" to "hyperlink", otherwise "attack" (attack URL only) or "profile" (profile URL only).
 
 Display settings.
+
 - `LinkMode`. Options are: "hyperlink" (clickable text), "attack" (attack URL only), "profile" (profile URL only) or "url" (both full URLs).
 - `LastActionRedWithin`. Last action will show red if up to this value, e.g. "15m", or "" for no colour.
 - `LastActionYellowWithin`. Last action will show yellow if up to this value, e.g. "7d", or "" for no colour.
+
+Actions while the app is running.
+
+- Press "R" to reload data from the "users.txt" file.
+- Press "Q" to quit the app.
+- Press "A" to enable / disable the alarm. It will show desktop notifications based on `AlarmLeadSeconds`.
 
 Below is an overview of all remaining configuration settings.
 
@@ -35,6 +42,7 @@ Below is an overview of all remaining configuration settings.
 - `ReleaseRecheckDelaySeconds`. Wait this long after a hospital / jail timer ends before re-checking.
 - `AwayRecheckSeconds`. Re-check abroad / travelling players.
 - `ErrorRetrySeconds`. Retry users whose last call returned an API error.
+- `AlarmLeadSeconds`. With the alarm on (press A), send a desktop notification this many seconds before a timer ends (default 30).
 
 Experimental settings.
 

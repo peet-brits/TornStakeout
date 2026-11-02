@@ -8,6 +8,7 @@
   "ReleaseRecheckDelaySeconds": 10,
   "AwayRecheckSeconds": 240,
   "ErrorRetrySeconds": 300,
+  "AlarmLeadSeconds": 30,
 
   "LastActionRedWithin": "15m",
   "LastActionYellowWithin": "7d"

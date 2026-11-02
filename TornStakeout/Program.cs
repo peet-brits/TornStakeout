@@ -35,6 +35,7 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
 var poller = new Poller(cfg, store);
 var pollTask = Task.Run(() => poller.RunAsync(cts.Token));
+var alarm = new Alarm(cfg, store);              // off until you press A
 
 var notice = skippedAtStart > 0 ? $"{skippedAtStart} line(s) in users.txt were not understood and skipped" : "";
 var noticeTime = DateTime.Now;
@@ -46,7 +47,8 @@ try
     while (!cts.IsCancellationRequested)
     {
         if (notice != "" && (DateTime.Now - noticeTime).TotalSeconds > 15) notice = "";
-        Console.Write(Screen.Build(cfg, store, poller, notice));
+        alarm.Check();
+        Console.Write(Screen.Build(cfg, store, poller, notice, alarm.Enabled));
 
         for (var i = 0; i < 10 && !cts.IsCancellationRequested; i++)   // redraw every second, check keys every 100 ms
         {
@@ -54,6 +56,7 @@ try
             {
                 var key = Console.ReadKey(true).Key;
                 if (key == ConsoleKey.Q) cts.Cancel();
+                else if (key == ConsoleKey.A) alarm.Toggle();
                 else if (key == ConsoleKey.R)
                 {
                     try
@@ -113,7 +116,7 @@ static class Screen
         return $"{Esc}]8;;{profile}{Esc}\\profile{Esc}]8;;{Esc}\\ {Esc}]8;;{attack}{Esc}\\attack{Esc}]8;;{Esc}\\";
     }
 
-    public static string Build(AppConfig cfg, DataStore store, Poller poller, string notice)
+    public static string Build(AppConfig cfg, DataStore store, Poller poller, string notice, bool alarmOn)
     {
         int height;
         try { height = Console.WindowHeight; } catch { height = 40; }
@@ -127,7 +130,9 @@ static class Screen
         var saved = store.LastSaved?.ToLocalTime().ToString("HH:mm:ss") ?? "never";
         Line(Paint("1", "Torn Stakeout") +
              $"  {DateTime.Now:HH:mm:ss}   users: {store.Count}   calls: {poller.TotalCalls} ({poller.CallsLastMinute}/{cfg.MaxCallsPerMinute} per min)   saved: {saved}   " +
-             Paint("90", "[R] reload  [Q] quit"));
+             Paint("90", "[R] reload  ") +
+             (alarmOn ? Paint("30;43", "[A] alarm") : Paint("90", "[A] alarm")) +     // highlighted while the alarm is on
+             Paint("90", "  [Q] quit"));
         Line(Paint("90", poller.Message) + (notice != "" ? "   " + Paint("33", notice) : ""));
         var pause = poller.PauseSecondsLeft;
         if (pause > 0) Line(Paint("1;31", $"PAUSED: too many requests, resuming in {pause}s"));

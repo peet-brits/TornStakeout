@@ -21,10 +21,11 @@ public class AppConfig
     public int ReleaseRecheckDelaySeconds { get; set; } = 10;
     public int AwayRecheckSeconds { get; set; } = 240;
     public int ErrorRetrySeconds { get; set; } = 300;
+    public int AlarmLeadSeconds { get; set; } = 30;
 
     // Last action colours. A number plus a unit: s (seconds), m (minutes), h (hours) or d (days), e.g. "15m", "7d".
     // Within the red limit = red, otherwise within the yellow limit = yellow, otherwise no colour.
-    // Blank (the default) or anything that can't be read turns that colour off.
+    // Blank or anything that can't be read turns that colour off.
     public string LastActionRedWithin { get; set; } = "15m";
     public string LastActionYellowWithin { get; set; } = "7d";
 
@@ -85,6 +86,7 @@ public class AppConfig
         cfg.MaxCallsPerMinute = Math.Max(1, cfg.MaxCallsPerMinute);
         cfg.ActiveWithinMinutes = Math.Max(0, cfg.ActiveWithinMinutes);
         cfg.ReleaseRecheckDelaySeconds = Math.Max(0, cfg.ReleaseRecheckDelaySeconds);
+        cfg.AlarmLeadSeconds = Math.Max(1, cfg.AlarmLeadSeconds);
 
         cfg.LastActionRedSeconds = ParseDuration(cfg.LastActionRedWithin);
         cfg.LastActionYellowSeconds = ParseDuration(cfg.LastActionYellowWithin);
@@ -268,6 +270,24 @@ public class DataStore
         // The safety re-check is only used if it lands while the player is still expected to be in hospital/jail.
         // Otherwise the only re-check is at release time + ReleaseRecheckDelaySeconds; the two never compete.
         return safety < until ? safety : until.AddSeconds(c.ReleaseRecheckDelaySeconds);
+    }
+
+    // Players with a running timer (hospital, jail or any other state with an end time) that ends within
+    // 'withinSeconds' and has not ended yet, soonest first. Used by the alarm.
+    public List<(long id, string name, long until, string place)> ReleasingSoon(int withinSeconds)
+    {
+        lock (_lock)
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            return _users
+                .Where(u => u.Error == null && u.Until > now && u.Until - now <= withinSeconds)
+                .OrderBy(u => u.Until)
+                .Select(u => (id: u.Id,
+                              name: string.IsNullOrEmpty(u.Name) ? $"[{u.Id}]" : u.Name,
+                              until: u.Until,
+                              place: string.IsNullOrEmpty(u.StatusState) ? "its status" : u.StatusState.ToLowerInvariant()))
+                .ToList();
+        }
     }
 
     // Picks up to 'max' most-overdue users and marks the attempt.
