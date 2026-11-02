@@ -20,7 +20,7 @@ The app will create any missing files on first run. The default settings should 
 - config.json - If your terminal supports clickable links, set "LinkMode" to "hyperlink", otherwise "attack" (attack URL only) or "profile" (profile URL only).
 
 Display settings.
-- `LinkMode`. Options are: "hyperlink" (clickable text), "url" (both full URLs), "profile" (profile URL only) or "attack" (attack URL only).
+- `LinkMode`. Options are: "hyperlink" (clickable text), "attack" (attack URL only), "profile" (profile URL only) or "url" (both full URLs).
 - `LastActionRedWithin`. Last action will show red if up to this value, e.g. "15m". Default: no colour.
 - `LastActionYellowWithin`. Last action will show yellow if up to this value, e.g. "7d". Default: no colour.
 
@@ -47,3 +47,9 @@ Configuration priority.
 - If "config.json" is present it will use the values from this file instead of the default values.
 - Anything in "local.json" will override "config.json". This is intended for local-only values, like the API key.
 - The TORN_API_KEY environment variable will alway take priority if specified.
+
+## Features
+
+This app is most useful if you have a list of hospitalised targets. For example, events like Trick or Treat, or bounty hunting.
+
+If you have a lot of "okay" players it will run through API calls much faster. All timers are configurable, so you can adjust it to your taste.
