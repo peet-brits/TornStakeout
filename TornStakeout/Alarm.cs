@@ -78,7 +78,7 @@ class Alarm
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var fresh = new List<(string name, long until, string place)>();
         foreach (var p in _store.ReleasingSoon(_cfg.AlarmLeadSeconds))
-            if (_alerted.Add((p.id, p.until)))
+            if (_alerted.Add((p.id, p.until)) && !p.quiet)    // quiet ones are marked as announced, without a notification
                 fresh.Add((p.name, p.until, p.place));
         if (fresh.Count == 0) return;
 

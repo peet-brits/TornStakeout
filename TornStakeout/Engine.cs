@@ -122,6 +122,11 @@ public class UserRecord
 
     public DateTimeOffset? LastUpdate { get; set; }   // last successful update
     public DateTimeOffset? LastAttempt { get; set; }  // last time we tried
+    // Not saved to data.json: what happened during this run of the app (the alarm ignores a player's first load).
+    [JsonIgnore] public bool LoadedThisRun { get; set; }
+    [JsonIgnore] public long FirstLoadUntil { get; set; }   // the timer seen on the first load (0 = none)
+    [JsonIgnore] public long FirstLoadLeft { get; set; }    // seconds that timer had left on the first load
+
     public string? Error { get; set; }                // API error from the last answer, null if it was fine
 }
 
@@ -277,19 +282,22 @@ public class DataStore
     }
 
     // Players with a running timer (hospital, jail or any other state with an end time) that ends within
-    // 'withinSeconds' and has not ended yet, soonest first. Used by the alarm.
-    public List<(long id, string name, long until, string place)> ReleasingSoon(int withinSeconds)
+    // 'withinSeconds' and has not ended yet, soonest first. Used by the alarm. Players that have not been loaded in this
+    // run (only saved data from before) are left out.
+    public List<(long id, string name, long until, string place, bool quiet)> ReleasingSoon(int withinSeconds)
     {
         lock (_lock)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             return _users
-                .Where(u => u.Error == null && u.Until > now && u.Until - now <= withinSeconds)
+                .Where(u => u.LoadedThisRun && u.Error == null && u.Until > now && u.Until - now <= withinSeconds)
                 .OrderBy(u => u.Until)
                 .Select(u => (id: u.Id,
                               name: string.IsNullOrEmpty(u.Name) ? $"[{u.Id}]" : u.Name,
                               until: u.Until,
-                              place: string.IsNullOrEmpty(u.StatusState) ? "its status" : u.StatusState.ToLowerInvariant()))
+                              place: string.IsNullOrEmpty(u.StatusState) ? "its status" : u.StatusState.ToLowerInvariant(),
+                              // a timer that was already inside the window when the player was first loaded never alarms
+                              quiet: u.Until == u.FirstLoadUntil && u.FirstLoadLeft <= withinSeconds))
                 .ToList();
         }
     }
@@ -319,8 +327,9 @@ public class DataStore
             var u = _users.FirstOrDefault(x => x.Id == id);
             if (u == null) return;
 
-            // What we knew before this answer (only trusted if the last answer was fine), to spot a player becoming active.
-            var hadStatus = u.LastUpdate != null && u.Error == null;
+            // What we knew before this answer, to spot a player becoming active. Only trusted if it came from this run of the
+            // app (not from data.json) and the last answer was fine, so a player's first load never counts as a change.
+            var hadStatus = u.LoadedThisRun && u.Error == null;
             var prevState = u.StatusState;
             var prevUntil = u.Until;
 
@@ -353,6 +362,13 @@ public class DataStore
             u.LastUpdate = DateTimeOffset.UtcNow;
             u.Error = null;
             _dirty = true;
+
+            if (!u.LoadedThisRun)       // first answer for this player in this run: remember what it was
+            {
+                u.LoadedThisRun = true;
+                u.FirstLoadUntil = u.Until;
+                u.FirstLoadLeft = u.Until - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            }
 
             if (hadStatus && u.StatusState == "Okay" && u.Until == 0) NoteBecameActive(u, prevState, prevUntil);
         }
