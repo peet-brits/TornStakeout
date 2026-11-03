@@ -29,7 +29,7 @@ Actions while the app is running.
 
 - Press "R" to reload data from the "users.txt" file.
 - Press "Q" to quit the app.
-- Press "A" to enable / disable the alarm. It will show desktop notifications based on `AlarmLeadSeconds`.
+- Press “A” to enable / disable the alarm. It sends desktop notifications `AlarmLeadSeconds` before a timer ends, and when a player becomes okay earlier than expected or returns from abroad.
 - Press "P" to write all the data to a file: `print-<date>-<time>.txt`.
 
 Below is an overview of all remaining configuration settings.

@@ -178,6 +178,9 @@ public class DataStore
     DateTimeOffset? _lastSaved;
     bool _dirty;
 
+    readonly List<string> _activations = new();   // "became active early" messages for the alarm; filled by ApplySuccess, drained by TakeActivations
+    const int EarlySlackSeconds = 5;              // being released this much before the timer ends still counts as on time (clock differences)
+
     public DataStore(string path) => _path = path;
 
     public DateTimeOffset? LastSaved { get { lock (_lock) return _lastSaved; } }
@@ -316,6 +319,11 @@ public class DataStore
             var u = _users.FirstOrDefault(x => x.Id == id);
             if (u == null) return;
 
+            // What we knew before this answer (only trusted if the last answer was fine), to spot a player becoming active.
+            var hadStatus = u.LastUpdate != null && u.Error == null;
+            var prevState = u.StatusState;
+            var prevUntil = u.Until;
+
             var name = J.Str(root, "name");
             if (!string.IsNullOrEmpty(name)) u.Name = name;
 
@@ -345,6 +353,37 @@ public class DataStore
             u.LastUpdate = DateTimeOffset.UtcNow;
             u.Error = null;
             _dirty = true;
+
+            if (hadStatus && u.StatusState == "Okay" && u.Until == 0) NoteBecameActive(u, prevState, prevUntil);
+        }
+    }
+
+    // A player who was unavailable is now "Okay". Only surprises are recorded for the alarm: a timer that still had
+    // time left, or a player who was abroad / travelling (those have no end time to expect).
+    void NoteBecameActive(UserRecord u, string? prevState, long prevUntil)   // call while holding _lock
+    {
+        var name = string.IsNullOrEmpty(u.Name) ? $"[{u.Id}]" : u.Name;
+        var left = prevUntil - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        if (prevUntil > 0 && left > EarlySlackSeconds)
+        {
+            var place = string.IsNullOrEmpty(prevState) ? "its timer" : prevState.ToLowerInvariant();
+            _activations.Add($"{name} left {place} {FormatRemaining(left)} early");
+        }
+        else if (prevState is "Abroad" or "Traveling")
+        {
+            _activations.Add($"{name} is back in Torn (was {(prevState == "Abroad" ? "abroad" : "travelling")})");
+        }
+    }
+
+    // The alarm collects these about once a second.
+    public List<string> TakeActivations()
+    {
+        lock (_lock)
+        {
+            var list = _activations.ToList();
+            _activations.Clear();
+            return list;
         }
     }
 

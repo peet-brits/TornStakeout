@@ -41,7 +41,8 @@ static class Notifier
     }
 }
 
-// The [A] alarm: while on, sends one notification for each hospital or jail release that is AlarmLeadSeconds or less away.
+// The [A] alarm: while on, sends one notification for each hospital or jail release that is AlarmLeadSeconds or less away,
+// and one when a player becomes active (Okay) earlier than expected, or after being abroad / travelling.
 class Alarm
 {
     readonly AppConfig _cfg;
@@ -68,7 +69,11 @@ class Alarm
     // Call about once a second.
     public void Check()
     {
+        var early = _store.TakeActivations();   // always drained, so events from while the alarm was off are never announced later
         if (!Enabled) return;
+
+        if (early.Count > 0)
+            Notifier.Send("Torn Stakeout", string.Join("; ", early));
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var fresh = new List<(string name, long until, string place)>();
